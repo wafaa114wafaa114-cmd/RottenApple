@@ -1,7 +1,71 @@
 import SwiftUI
 import Combine
+import AVFoundation
+import UIKit
 
-// جزيئات الترقيعات عند الفوز
+// MARK: - مدير الصوت
+class SoundManager {
+    static let shared = SoundManager()
+    private var players: [String: AVAudioPlayer] = [:]
+    private var movementPlayer: AVAudioPlayer?
+
+    private init() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("Audio session error: \(error.localizedDescription)")
+        }
+    }
+
+    func playSound(named name: String) {
+        let components = name.split(separator: ".")
+        guard components.count == 2,
+              let path = Bundle.main.path(forResource: String(components[0]), ofType: String(components[1])) else {
+            return
+        }
+
+        let url = URL(fileURLWithPath: path)
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.prepareToPlay()
+            player.play()
+            players[name] = player
+        } catch {
+            print("Sound error: \(error.localizedDescription)")
+        }
+    }
+
+    func startMovementSound(named name: String, volume: Float = 0.25) {
+        guard movementPlayer == nil else {
+            if movementPlayer?.isPlaying == false { movementPlayer?.play() }
+            return
+        }
+
+        let components = name.split(separator: ".")
+        guard components.count == 2,
+              let path = Bundle.main.path(forResource: String(components[0]), ofType: String(components[1])) else {
+            return
+        }
+
+        do {
+            movementPlayer = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+            movementPlayer?.numberOfLoops = -1
+            movementPlayer?.volume = volume
+            movementPlayer?.prepareToPlay()
+            movementPlayer?.play()
+        } catch {
+            print("Movement sound error: \(error.localizedDescription)")
+        }
+    }
+
+    func stopMovementSound() {
+        movementPlayer?.stop()
+        movementPlayer = nil
+    }
+}
+
+// MARK: - جزيئات الترقيعات عند الفوز
 struct Confetti: Identifiable {
     let id = UUID()
     let color: Color
@@ -10,23 +74,27 @@ struct Confetti: Identifiable {
     var opacity: Double = 1.0
 }
 
+// MARK: - واجهة اللعبة
 struct Wafaa: View {
-    // MARK: - حالات اللعبة
-    @State private var isPouring = false             // هل تصب الآن؟
-    @State private var cupX: CGFloat = -90           // حركة الفنجال يمين ويسار
+    // حالات اللعبة
+    @State private var isPouring = false             // حالة صب القهوة
+    @State private var cupX: CGFloat = -90           // موضع الفنجال الأفقي
     @State private var movingRight = true            // اتجاه حركة الفنجال
+    @State private var isPausedAfterMiss = false     // إيقاف مؤقت عند الانسكاب خارج الفنجال
     @State private var gameState: GameState = .playing
-    @State private var confettiList: [Confetti] = [] // الترقيعات
+    @State private var confettiList: [Confetti] = [] // قائمة الفرقعات
     
-    // محرك حركة الفنجال التلقائية
+    @State private var enableMovementSound = true
+
+    // محرك تحديث الإطارات للحركة
     let timer = Timer.publish(every: 0.016, on: .main, in: .common).autoconnect()
     
-    // مكان سقوط القهوة ونطاق الفوز المتناسق مع الفنجال الكبير
+    // مكان سقوط القهوة ونطاق الفوز المتناسق مع الفنجال
     let streamDropX: CGFloat = 115.0
     let targetRange: ClosedRange<CGFloat> = 70...125
     
     enum GameState {
-        case playing, won, lost
+        case playing, won
     }
     
     var body: some View {
@@ -41,14 +109,14 @@ struct Wafaa: View {
                 Spacer()
                 
                 ZStack {
-                    // النملة مع الدلة بحجمكِ المعتمد
+                    // النملة مع الدلة
                     Image("Ant")
                         .resizable()
                         .scaledToFit()
                         .frame(width: 550, height: 360)
                         .offset(x: -35, y: -45)
                     
-                    // مجرى القهوة المضبوط بمقاسكِ وإحداثياتكِ
+                    // مجرى القهوة
                     Image("coffeeStream")
                         .resizable()
                         .scaledToFit()
@@ -67,17 +135,9 @@ struct Wafaa: View {
                 
                 Spacer()
                 
-                // رسائل النتيجة بعد الصب
+                // رسالة الفوز فقط
                 VStack(spacing: 6) {
-                    if gameState == .lost {
-                        Text("Almost had it! 💥")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.red)
-                        
-                        Text("Tap anywhere to try again")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.gray)
-                    } else if gameState == .won {
+                    if gameState == .won {
                         Text("GOOD JOB! 🎉")
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.green)
@@ -100,19 +160,21 @@ struct Wafaa: View {
                 .allowsHitTesting(false)
             }
         }
-        // لمس الشاشة للصب أو لإعادة اللعب
         .contentShape(Rectangle())
         .onTapGesture {
             switch gameState {
             case .playing:
                 pourCoffee()
-            case .won, .lost:
+            case .won:
                 resetGame()
             }
         }
-        // حركة الفنجال المحصورة داخل الشاشة
         .onReceive(timer) { _ in
-            guard gameState == .playing else { return }
+            guard gameState == .playing, !isPouring, !isPausedAfterMiss else { return }
+            
+            if enableMovementSound {
+                SoundManager.shared.startMovementSound(named: "slide.mp3")
+            }
             
             if movingRight {
                 cupX += 2.4
@@ -122,59 +184,86 @@ struct Wafaa: View {
                 if cupX <= -110 { movingRight = true }
             }
         }
+        .onDisappear {
+            SoundManager.shared.stopMovementSound()
+        }
     }
     
-    // فحص الصب
+    // MARK: - منطق الصب والتوقيت
     private func pourCoffee() {
-        guard gameState == .playing, !isPouring else { return }
+        guard gameState == .playing, !isPouring, !isPausedAfterMiss else { return }
         
         isPouring = true
-        let currentCupX = cupX
+        SoundManager.shared.stopMovementSound()
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            if targetRange.contains(currentCupX) {
-                gameState = .won
-                triggerConfetti()
-            } else {
-                gameState = .lost
-            }
+        // اهتزاز لمس خفيف وصوت صب القهوة
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        SoundManager.shared.playSound(named: "pour.mp3")
+        
+        let currentCupX = cupX
+        let isWinningShot = targetRange.contains(currentCupX)
+        
+        // تثبيت الفنجال فوراً عند إصابة الهدف
+        if isWinningShot {
+            gameState = .won
+        }
+        
+        // مدة تدفق مجرى القهوة
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            isPouring = false
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                isPouring = false
+            if isWinningShot {
+                // الفوز: انتظار انتهاء صوت الصب بهدوء ثم تشغيل صوت وظهور الكونفيتي معاً
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    SoundManager.shared.playSound(named: "celebrate.mp3")
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    triggerConfetti()
+                }
+            } else {
+                // الانسكاب خارج الفنجال: هابتك الخسارة القوي والمطلوب
+                isPausedAfterMiss = true
+                
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                
+                // وقفة زمنية قصيرة قبل العودة للحركة
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    isPausedAfterMiss = false
+                }
             }
         }
     }
     
-    // تشغيل الترقيعات على مستوى الشاشة بالكامل
+    // MARK: - تشغيل الترقيعات بالتزامن المباشر
     private func triggerConfetti() {
         let colors: [Color] = [.orange, .yellow, .pink, .green, .purple, .cyan, .red, .blue]
         
-        // توليد 60 قطعة فرقيعات تنتشر في كل الشاشة
         confettiList = (0..<60).map { _ in
             Confetti(
                 color: colors.randomElement() ?? .yellow,
-                x: CGFloat.random(in: -160...160),
-                y: CGFloat.random(in: -300...(-100)),
+                x: CGFloat.random(in: -140...140),
+                y: CGFloat.random(in: -220...(-80)),
                 opacity: 1.0
             )
         }
         
-        withAnimation(.easeOut(duration: 1.2)) {
+        withAnimation(.easeOut(duration: 1.3)) {
             for i in confettiList.indices {
-                confettiList[i].x += CGFloat.random(in: -60...60)
-                confettiList[i].y += CGFloat.random(in: 200...450) // تساقط نحو الأسفل عبر الشاشة
+                confettiList[i].x += CGFloat.random(in: -80...80)
+                confettiList[i].y += CGFloat.random(in: 280...500)
                 confettiList[i].opacity = 0.0
             }
         }
     }
     
-    // إعادة المحاولة
+    // MARK: - إعادة اللعبة بعد الفوز
     private func resetGame() {
         confettiList.removeAll()
         cupX = -90
         movingRight = true
-        gameState = .playing
+        isPausedAfterMiss = false
         isPouring = false
+        gameState = .playing
     }
 }
 
