@@ -323,8 +323,8 @@ final class AppleCleanupViewModel {
         haptics.levelComplete()
         sounds.play(.celebration)
         Task { @MainActor [weak self] in
-            // Wait for the confetti to finish before the "well done" card appears.
-            try? await Task.sleep(for: .milliseconds(1500))
+            // Let the confetti fall before the "well done" card appears.
+            try? await Task.sleep(for: .milliseconds(2400))
             self?.onComplete?()
         }
     }
@@ -663,7 +663,8 @@ final class SpiderShoeViewModel {
             self.danceTrigger += 1
             self.haptics.levelComplete()
             self.sounds.play(.celebration)
-            try? await Task.sleep(for: .milliseconds(1400))
+            // Let the confetti fall before the "well done" card appears.
+            try? await Task.sleep(for: .milliseconds(2400))
             self.onComplete?()
         }
     }
@@ -708,7 +709,11 @@ struct SpiderShoeView: View {
     // MARK: Board
 
     private func board(_ space: CanvasSpace, size: CGSize) -> some View {
-        ZStack {
+        // The spider dances around its own middle. Worked out here, outside the
+        // animation, so the animation doesn't have to read the art data itself.
+        let danceAnchor = space.unitPoint(Art.Spider.body.rect.center, in: size)
+
+        return ZStack {
             ArtImage(Art.Spider.body, in: space)
                 .zIndex(0)
 
@@ -721,7 +726,7 @@ struct SpiderShoeView: View {
         .keyframeAnimator(initialValue: DanceFrame(), trigger: vm.danceTrigger) { content, frame in
             content
                 .rotationEffect(.degrees(frame.angle),
-                                anchor: space.unitPoint(Art.Spider.body.rect.center, in: size))
+                                anchor: danceAnchor)
                 .offset(y: frame.lift)
         } keyframes: { _ in
             KeyframeTrack(\.angle) {
@@ -1294,30 +1299,53 @@ struct LevelHUD: View {
 // MARK: - CONFETTI — the burst at the end of each level
 // ========================================================================
 
-/// One piece of confetti.
-struct YaraConfetti: Identifiable {
-    let id = UUID()
+/// One paper piece of confetti (same style as Renad's flower game).
+struct YaraConfetti {
     let color: Color
-    var x: CGFloat = 0
-    var y: CGFloat = 0
-    var opacity: Double = 1.0
+    let size: CGSize
+    /// Where it starts, relative to the burst point.
+    let start: CGSize
+    /// How far it shoots up and sideways first.
+    let launch: CGSize
+    let launchDuration: Double
+    /// How far it drifts sideways while falling.
+    let fallDrift: CGFloat
+    let fallDuration: Double
+    /// Spin speed in radians per second.
+    let spin: Double
 }
 
-/// Shows a burst of falling confetti the moment `isActive` turns true.
+/// Shows a burst of confetti the moment `isActive` turns true: paper pieces
+/// shoot up, then spin as they fall down the whole screen.
 /// Put it over a level with `.overlay { ConfettiBurst(isActive: ...) }`.
 struct ConfettiBurst: View {
     let isActive: Bool
+    /// Where the burst comes from, as a fraction of the level's size.
+    var origin = UnitPoint(x: 0.5, y: 0.55)
 
-    @State private var confettiList: [YaraConfetti] = []
+    @State private var pieces: [YaraConfetti] = []
+    @State private var startDate: Date?
+
+    /// How long the whole burst lasts (longest launch + longest fall).
+    private static let totalDuration = 3.3
 
     var body: some View {
-        ZStack {
-            ForEach(confettiList) { c in
-                Circle()
-                    .fill(c.color)
-                    .frame(width: 12, height: 12)
-                    .offset(x: c.x, y: c.y)
-                    .opacity(c.opacity)
+        TimelineView(.animation(paused: startDate == nil)) { timeline in
+            Canvas { context, size in
+                guard let startDate else { return }
+                let t = timeline.date.timeIntervalSince(startDate)
+                let base = CGPoint(x: origin.x * size.width, y: origin.y * size.height)
+
+                for piece in pieces {
+                    guard let spot = position(of: piece, at: t, from: base, screenHeight: size.height)
+                    else { continue }
+                    var pen = context
+                    pen.translateBy(x: spot.x, y: spot.y)
+                    pen.rotate(by: .radians(piece.spin * t))
+                    let rect = CGRect(x: -piece.size.width / 2, y: -piece.size.height / 2,
+                                      width: piece.size.width, height: piece.size.height)
+                    pen.fill(Path(rect), with: .color(piece.color))
+                }
             }
         }
         .allowsHitTesting(false)
@@ -1327,30 +1355,49 @@ struct ConfettiBurst: View {
     }
 
     private func triggerConfettiAnimation() {
-        let colors: [Color] = [.red, .yellow, .orange, .green, .pink, .purple, .cyan]
+        let colors: [Color] = [.pink, .yellow, .purple, .orange, .teal, .white]
 
-        // Create the pieces at their starting spots.
-        confettiList = (0..<65).map { _ in
+        pieces = (0..<90).map { _ in
             YaraConfetti(
-                color: colors.randomElement() ?? .yellow,
-                x: CGFloat.random(in: -150...150),
-                y: CGFloat.random(in: -200...100),
-                opacity: 1.0
+                color: colors.randomElement() ?? .pink,
+                size: CGSize(width: .random(in: 8...14), height: .random(in: 13...20)),
+                start: CGSize(width: .random(in: -80...80), height: -CGFloat.random(in: 20...100)),
+                launch: CGSize(width: .random(in: -170...170), height: -CGFloat.random(in: 230...450)),
+                launchDuration: .random(in: 0.4...0.6),
+                fallDrift: .random(in: -70...70),
+                fallDuration: .random(in: 1.8...2.6),
+                spin: .random(in: -16...16)
             )
         }
+        startDate = .now
 
-        // A moment later (so the pieces are on screen first), spread them out,
-        // let them fall and fade away.
+        // Stop drawing once every piece has fallen off the screen.
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(30))
-            withAnimation(.easeOut(duration: 1.4)) {
-                for i in confettiList.indices {
-                    confettiList[i].x += CGFloat.random(in: -80...80)
-                    confettiList[i].y += CGFloat.random(in: 200...400)
-                    confettiList[i].opacity = 0.0
-                }
-            }
+            try? await Task.sleep(for: .seconds(Self.totalDuration))
+            startDate = nil
+            pieces = []
         }
+    }
+
+    /// Where a piece is `t` seconds into the burst, or nil once it's gone.
+    private func position(of piece: YaraConfetti, at t: Double,
+                          from base: CGPoint, screenHeight: CGFloat) -> CGPoint? {
+        let start = CGPoint(x: base.x + piece.start.width, y: base.y + piece.start.height)
+
+        if t < piece.launchDuration {
+            // Shoot up, slowing down at the top (ease out).
+            let u = t / piece.launchDuration
+            let eased = 1 - (1 - u) * (1 - u)
+            return CGPoint(x: start.x + piece.launch.width * eased,
+                           y: start.y + piece.launch.height * eased)
+        }
+
+        // Then fall the height of the screen, speeding up (ease in).
+        let u = (t - piece.launchDuration) / piece.fallDuration
+        guard u < 1 else { return nil }
+        let eased = u * u
+        return CGPoint(x: start.x + piece.launch.width + piece.fallDrift * eased,
+                       y: start.y + piece.launch.height + screenHeight * eased)
     }
 }
 
