@@ -1,6 +1,7 @@
 import SwiftUI
 import SpriteKit
 import UIKit
+import AVFoundation
 
 class Flower: SKSpriteNode {
     var home = CGPoint.zero
@@ -9,17 +10,18 @@ class Flower: SKSpriteNode {
 
 class FlowerScene: SKScene {
 
-    // ----- بيانات الورود من التصميم -----
-    let flowerData: [(name: String, x: CGFloat, y: CGFloat)] = [
-        ("Purple1", 96, 173),  ("Pink1", 184, 159),   ("Yellow1", 273, 169),
-        ("Yellow1", 57, 331),  ("Pink1", 178, 341),   ("Purple1", 286, 333),
-        ("Purple1", 97, 490),  ("Yellow1", 183, 480), ("Pink1", 277, 490)
+    // ----- أسماء الورود (ترتيب الصفوف من فوق لتحت) -----
+    let flowerNames: [String] = [
+        "Purple1", "Pink1", "Yellow1",
+        "Yellow1", "Pink1", "Purple1",
+        "Purple1", "Yellow1", "Pink1"
     ]
 
-    // موضع السلة: إزاحة خفيفة لليسار وتنزيل طفيف للأسفل
-    let basketX: CGFloat = 60
-    let basketY: CGFloat = 530
-    
+    // ----- موضع وحجم السلة -----
+    let basketScale: CGFloat = 0.9
+    let basketCenterX: CGFloat = 0.5
+    let basketCenterY: CGFloat = 0.16
+
     // توزيع الورود داخل السلة
     let slots: [(dx: CGFloat, angle: CGFloat, scale: CGFloat)] = [
         (0, 0, 1.05), (-24, 12, 0.95), (24, -12, 0.95),
@@ -27,8 +29,19 @@ class FlowerScene: SKScene {
         (65, -28, 0.78), (-12, 5, 0.90), (14, -5, 0.90)
     ]
 
-    // عمق استقرار الساق لتستقر الزهور داخل السلة
     let stemDepth: CGFloat = 0.42
+
+    // ----- الهابتيكس -----
+    let softHaptic = UIImpactFeedbackGenerator(style: .soft)
+    let mediumHaptic = UIImpactFeedbackGenerator(style: .medium)
+    let lightHaptic = UIImpactFeedbackGenerator(style: .light)
+    let successHaptic = UINotificationFeedbackGenerator()
+
+    // ----- الأصوات القصيرة -----
+    // moveSound يشتغل بس لما تمسكين الوردة
+    let moveSound = SKAction.playSoundFileNamed("shoeson.wav", waitForCompletion: false)
+    let backSound = SKAction.playSoundFileNamed("back.mp3", waitForCompletion: false)
+    let winSound  = SKAction.playSoundFileNamed("win.mp3", waitForCompletion: false)
 
     // ----- عناصر المشهد والحالة -----
     var basket = SKSpriteNode()
@@ -42,6 +55,9 @@ class FlowerScene: SKScene {
         flowers.removeAll()
         collectedCount = 0
 
+        setupAudioSession()
+        prepareHaptics()
+
         // 1. الخلفية
         let bg = SKSpriteNode(imageNamed: "bg_flower")
         bg.position = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -50,28 +66,54 @@ class FlowerScene: SKScene {
         addChild(bg)
 
         // 2. السلة
-        basket = SKSpriteNode(imageNamed: "Basket")
-        basket.setScale(1.42)
-        basket.position = CGPoint(
-            x: basketX + (basket.size.width / 2),
-            y: size.height - (basketY + (basket.size.height / 2))
-        )
+        basket = SKSpriteNode(imageNamed: "basket")
+        basket.setScale(basketScale)
+        basket.position = CGPoint(x: size.width * basketCenterX,
+                                  y: size.height * basketCenterY)
         basket.zPosition = 5
         addChild(basket)
 
-        // 3. الورود
-        for item in flowerData {
-            let f = Flower(imageNamed: item.name)
+        // 3. الورود (شبكة مرتبة 3×3)
+        let columns = 3
+        let rows = 3
+        let sample = SKSpriteNode(imageNamed: "Purple1")
+
+        let marginX: CGFloat = 20
+        let minY = size.height * 0.32
+        let maxY = size.height - sample.size.height - 60
+
+        let cellW = (size.width - marginX * 2) / CGFloat(columns)
+        let cellH = (maxY - minY) / CGFloat(rows)
+
+        for (i, name) in flowerNames.enumerated() {
+            let f = Flower(imageNamed: name)
             f.anchorPoint = CGPoint(x: 0.5, y: 0)
-            f.position = CGPoint(
-                x: item.x + f.size.width / 2,
-                y: size.height - (item.y + f.size.height)
-            )
+
+            let col = i % columns
+            let row = rows - 1 - (i / columns)
+
+            let x = marginX + cellW * (CGFloat(col) + 0.5)
+            let y = minY + cellH * (CGFloat(row) + 0.5) - f.size.height / 2
+
+            f.position = CGPoint(x: x, y: y)
             f.home = f.position
             f.zPosition = 3
             addChild(f)
             flowers.append(f)
         }
+    }
+
+    // ----- إعداد الصوت -----
+    private func setupAudioSession() {
+        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    private func prepareHaptics() {
+        softHaptic.prepare()
+        mediumHaptic.prepare()
+        lightHaptic.prepare()
+        successHaptic.prepare()
     }
 
     // ----- لمس وسحب الورود -----
@@ -84,7 +126,10 @@ class FlowerScene: SKScene {
             f.removeAllActions()
             f.zPosition = 10
             f.run(.scale(to: 1.15, duration: 0.1))
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+
+            softHaptic.impactOccurred()
+            softHaptic.prepare()
+            run(moveSound)
             break
         }
     }
@@ -100,7 +145,7 @@ class FlowerScene: SKScene {
         dragged = nil
         let p = touch.location(in: self)
         let dropZone = basket.frame.insetBy(dx: -45, dy: -45)
-        
+
         if dropZone.contains(p) {
             addToBasket(f)
         } else {
@@ -121,8 +166,9 @@ class FlowerScene: SKScene {
         f.collected = true
         let slot = slots[min(collectedCount, slots.count - 1)]
 
+        let spread = basketScale / 1.42
         let stemBase = basket.frame.maxY - (basket.frame.height * stemDepth)
-        let target = CGPoint(x: basket.frame.midX + slot.dx, y: stemBase)
+        let target = CGPoint(x: basket.frame.midX + slot.dx * spread, y: stemBase)
 
         f.zPosition = 4 + CGFloat(collectedCount) * 0.01
         collectedCount += 1
@@ -134,13 +180,16 @@ class FlowerScene: SKScene {
         f.run(.group([move, turn, grow]))
 
         basket.run(.sequence([
-            .scale(to: 1.48, duration: 0.1),
-            .scale(to: 1.42, duration: 0.1)
+            .scale(to: basketScale * 1.04, duration: 0.1),
+            .scale(to: basketScale, duration: 0.1)
         ]))
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        mediumHaptic.impactOccurred()
+        mediumHaptic.prepare()
 
         if collectedCount == flowers.count {
-            celebrate()
+            run(.sequence([.wait(forDuration: 0.35),
+                           .run { [weak self] in self?.celebrate() }]))
         }
     }
 
@@ -152,15 +201,20 @@ class FlowerScene: SKScene {
         ])
         back.timingMode = .easeInEaseOut
         f.run(back) { f.zPosition = 3 }
+
+        lightHaptic.impactOccurred()
+        lightHaptic.prepare()
+        run(backSound)
     }
 
     // ----- احتفال الفرقعات -----
     func celebrate() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        
+        successHaptic.notificationOccurred(.success)
+        run(winSound)
+
         basket.run(.sequence([
-            .scale(to: 1.54, duration: 0.15),
-            .scale(to: 1.42, duration: 0.15)
+            .scale(to: basketScale * 1.08, duration: 0.15),
+            .scale(to: basketScale, duration: 0.15)
         ]))
 
         spawnConfetti()
@@ -173,7 +227,7 @@ class FlowerScene: SKScene {
             let width = CGFloat.random(in: 8...14)
             let height = CGFloat.random(in: 13...20)
             let piece = SKSpriteNode(color: colors.randomElement() ?? .systemPink, size: CGSize(width: width, height: height))
-            
+
             piece.position = CGPoint(
                 x: basket.position.x + CGFloat.random(in: -80...80),
                 y: basket.position.y + CGFloat.random(in: 20...100)
@@ -204,7 +258,7 @@ class FlowerScene: SKScene {
     }
 }
 
-// ----- واجهة العرض متوافقة مع أبعاد الجهاز تلقائياً -----
+// ----- واجهة العرض -----
 struct Renad: View {
     var body: some View {
         GeometryReader { geo in
