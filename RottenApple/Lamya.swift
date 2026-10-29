@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import AudioToolbox
 
 // نموذج لبيانات كل بكرة خيط
@@ -12,18 +13,19 @@ struct YarnOption: Identifiable {
 struct WovenLine: Identifiable {
     let id = UUID()
     let color: Color
-    let yOffset: CGFloat
+    var yOffset: CGFloat
 }
 
-// عنصر المفرقعات (Confetti Particle)
+// عنصر المفرقعات (Confetti Particle) المحدث ليتطابق تماماً
 struct ConfettiParticle: Identifiable {
     let id = UUID()
     let color: Color
-    var x: CGFloat
-    var y: CGFloat
-    var scale: CGFloat
-    var rotation: Double
-    var opacity: Double
+    var x: CGFloat = 0
+    var y: CGFloat = 0
+    var width: CGFloat = 12
+    var height: CGFloat = 16
+    var rotation: Double = 0
+    var opacity: Double = 1.0
 }
 
 struct Lamya: View {
@@ -41,6 +43,9 @@ struct Lamya: View {
     @State private var showFinalSadu = false
     @State private var loomScale: CGFloat = 1.0
     
+    // مقاسات الشاشة للحفاظ على التوافق
+    @State private var screenSize: CGSize = .zero
+    
     // مصفوفة المفرقعات
     @State private var confettiParticles: [ConfettiParticle] = []
     
@@ -55,124 +60,140 @@ struct Lamya: View {
     @State private var activeYarnColor: Color = .clear
     @State private var isWeaving = false
     
-    // مقاسات الخيوط
+    // مقاسات الخيوط النسيجية
     private let lineWidth: CGFloat = 189
     private let lineHeight: CGFloat = 2.0
-    private let stepY: CGFloat = 2.4
+    private let stepY: CGFloat = 2.3
     private let linesPerYarn = 6
     
     private let startY: CGFloat = 23.0
     private let lineOffsetX: CGFloat = -6
+    
+    // مشغل الصوت
+    @State private var audioPlayer: AVAudioPlayer?
     
     private func getLineY(for index: Int) -> CGFloat {
         return startY - (CGFloat(index) * stepY)
     }
     
     var body: some View {
-        ZStack {
-            // 1. الخلفية
-            Image("background")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-            
-            VStack {
-                Spacer()
+        GeometryReader { geometry in
+            ZStack {
+                // 1. الخلفية
+                Image("background")
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
                 
-                // 2. النول مع الخيوط والتحول الكامل
-                ZStack {
-                    // النول الأساسي الأول
-                    Image("Sadu")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 320)
-                        .opacity(showFinalSadu ? 0.0 : 1.0)
+                VStack {
+                    Spacer()
                     
-                    // صورة السدو النهائي المكتمل (مزاحة لليمين لتتوسط النول)
-                    Image("Sadu UP")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 320)
-                        .offset(x: 10)
-                        .opacity(showFinalSadu ? 1.0 : 0.0)
-                    
-                    // الخيوط والعنكبوت: تظهر فقط أثناء الحياكة وتُزال تماماً عند ظهور السدو الثاني
-                    if !showFinalSadu {
-                        ForEach(wovenLines) { line in
-                            Rectangle()
-                                .fill(line.color)
-                                .frame(width: lineWidth, height: lineHeight)
-                                .shadow(color: .black.opacity(0.12), radius: 0.3, y: 0.4)
-                                .offset(x: lineOffsetX, y: line.yOffset)
-                        }
-                        
-                        // الخيط الجاري نسجه حالياً
-                        if isWeaving {
-                            HStack(spacing: 0) {
-                                if !isWeavingRight {
-                                    Spacer(minLength: 0)
-                                }
-                                Rectangle()
-                                    .fill(activeYarnColor)
-                                    .frame(width: currentLineWidth, height: lineHeight)
-                                    .shadow(color: .black.opacity(0.12), radius: 0.3, y: 0.4)
-                                if isWeavingRight {
-                                    Spacer(minLength: 0)
-                                }
-                            }
-                            .frame(width: lineWidth)
-                            .offset(x: lineOffsetX, y: spiderY + 10)
-                        }
-                        
-                        // العنكبوت
-                        Image("Spider")
+                    // 2. النول مع الخيوط والتحول الكامل
+                    ZStack {
+                        // النول الأساسي الأول
+                        Image("Sadu")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 48, height: 48)
-                            .offset(x: spiderX, y: spiderY)
-                    }
-                }
-                .scaleEffect(loomScale)
-                
-                Spacer()
-                
-                // 3. أزرار بكرات الخيوط بالأسفل
-                HStack(spacing: 16) {
-                    ForEach(yarns) { yarn in
-                        let isUsed = usedYarnNames.contains(yarn.imageName)
-                        // عند اكتمال السدو الثاني تعود الألوان طبيعية 100%
-                        let shouldDim = isUsed && !showFinalSadu
+                            .frame(width: 320)
+                            .opacity(showFinalSadu ? 0.0 : 1.0)
                         
-                        Button(action: {
-                            weaveBatch(yarn: yarn)
-                        }) {
-                            Image(yarn.imageName)
+                        // صورة السدو النهائي المكتمل (متوسطة في المنتصف تماماً)
+                        Image("Sadu UP")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 320)
+                            .opacity(showFinalSadu ? 1.0 : 0.0)
+                        
+                        // الخيوط والعنكبوت: تظهر فقط أثناء الحياكة
+                        if !showFinalSadu {
+                            ForEach(wovenLines) { line in
+                                Rectangle()
+                                    .fill(line.color)
+                                    .frame(width: lineWidth, height: lineHeight)
+                                    .shadow(color: .black.opacity(0.12), radius: 0.3, y: 0.4)
+                                    .offset(x: lineOffsetX, y: line.yOffset)
+                            }
+                            
+                            // الخيط الجاري نسجه حالياً
+                            if isWeaving {
+                                HStack(spacing: 0) {
+                                    if !isWeavingRight {
+                                        Spacer(minLength: 0)
+                                    }
+                                    Rectangle()
+                                        .fill(activeYarnColor)
+                                        .frame(width: currentLineWidth, height: lineHeight)
+                                        .shadow(color: .black.opacity(0.12), radius: 0.3, y: 0.4)
+                                    if isWeavingRight {
+                                        Spacer(minLength: 0)
+                                    }
+                                }
+                                .frame(width: lineWidth)
+                                .offset(x: lineOffsetX, y: spiderY + 10)
+                            }
+                            
+                            // العنكبوت
+                            Image("Spider")
                                 .resizable()
                                 .scaledToFit()
-                                .frame(width: 65, height: 65)
-                                .opacity(shouldDim ? 0.35 : 1.0)
-                                .grayscale(shouldDim ? 0.8 : 0.0)
-                                .animation(.easeInOut(duration: 0.4), value: showFinalSadu)
+                                .frame(width: 48, height: 48)
+                                .offset(x: spiderX, y: spiderY)
                         }
-                        .disabled(isWeaving || isUsed || showFinalSadu)
+                    }
+                    .scaleEffect(loomScale)
+                    
+                    Spacer()
+                    
+                    // 3. أزرار بكرات الخيوط
+                    HStack(spacing: 12) {
+                        ForEach(yarns) { yarn in
+                            let isUsed = usedYarnNames.contains(yarn.imageName)
+                            let shouldDim = isUsed && !showFinalSadu
+                            
+                            Button(action: {
+                                let selectionGen = UISelectionFeedbackGenerator()
+                                selectionGen.selectionChanged()
+                                playSound(named: "click")
+                                weaveBatch(yarn: yarn)
+                            }) {
+                                Image(yarn.imageName)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 60, height: 60)
+                                    .opacity(shouldDim ? 0.35 : 1.0)
+                                    .grayscale(shouldDim ? 0.8 : 0.0)
+                                    .animation(.easeInOut(duration: 0.4), value: showFinalSadu)
+                            }
+                            .disabled(isWeaving || isUsed || showFinalSadu)
+                        }
+                    }
+                    .padding(.bottom, 60)
+                }
+                
+                // 4. طبقة المفرقعات (Confetti) المحدثة بالتنسيق الجديد تماماً
+                ForEach(confettiParticles) { p in
+                    Rectangle()
+                        .fill(p.color)
+                        .frame(width: p.width, height: p.height)
+                        .rotationEffect(.degrees(p.rotation))
+                        .offset(x: p.x, y: p.y)
+                        .opacity(p.opacity)
+                }
+                .allowsHitTesting(false)
+            }
+            .onAppear {
+                screenSize = geometry.size
+                spiderY = getLineY(for: 0) - 10
+                
+                DispatchQueue.global(qos: .background).async {
+                    do {
+                        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                        try AVAudioSession.sharedInstance().setActive(true)
+                    } catch {
+                        print("خطأ في تفعيل إعدادات الصوت: \(error.localizedDescription)")
                     }
                 }
-                .padding(.bottom, 36)
             }
-            
-            // 4. طبقة المفرقعات (Confetti)
-            ForEach(confettiParticles) { p in
-                Circle()
-                    .fill(p.color)
-                    .frame(width: 9, height: 9)
-                    .scaleEffect(p.scale)
-                    .rotationEffect(.degrees(p.rotation))
-                    .opacity(p.opacity)
-                    .position(x: p.x, y: p.y)
-            }
-        }
-        .onAppear {
-            spiderY = getLineY(for: 0) - 10
         }
     }
     
@@ -191,6 +212,9 @@ struct Lamya: View {
             isWeaving = false
             currentLineWidth = 0
             
+            // 🛑 إيقاف صوت الحياكة فور انتهاء الـ 6 سطور للون الحالي
+            audioPlayer?.stop()
+            
             if usedYarnNames.count >= yarns.count {
                 triggerCompletion()
             }
@@ -206,7 +230,13 @@ struct Lamya: View {
         spiderX = goRight ? leftSpiderX : rightSpiderX
         currentLineWidth = 0
         
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // 📳 الهابتيك الميكانيكي النقي (.rigid)
+        let rigidGenerator = UIImpactFeedbackGenerator(style: .rigid)
+        rigidGenerator.prepare()
+        rigidGenerator.impactOccurred(intensity: 1.0)
+        
+        // 🔊 تشغيل صوت حياكة العنكبوت (Knitting)
+        playSound(named: "Knitting")
         
         withAnimation(.linear(duration: 0.22)) {
             spiderX = goRight ? rightSpiderX : leftSpiderX
@@ -220,72 +250,79 @@ struct Lamya: View {
         }
     }
     
-    // اكتمال الحياكة والانتقال مع التكبير والمفرقعات
+    // اكتمال الحياكة والانتقال الفوري
     private func triggerCompletion() {
-        // صعود العنكبوت للأعلى
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-            spiderX = 0
-            spiderY = -95
+        spiderX = 0
+        spiderY = -95
+        
+        showFinalSadu = true
+        loomScale = 1.15
+        
+        spawnConfetti()
+        
+        // 🔊 تشغيل صوت الاحتفال (celebrate) فوراً
+        playSound(named: "celebrate")
+        
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+    }
+    
+    // إنشاء المفرقعات بالتنسيق الجديد المطابق تماماً
+    private func spawnConfetti() {
+        let colors: [Color] = [.pink, .yellow, .purple, .orange, .teal, .white, .red, .cyan]
+        
+        confettiParticles = (0..<90).map { _ in
+            ConfettiParticle(
+                color: colors.randomElement() ?? .pink,
+                x: CGFloat.random(in: -80...80),
+                y: CGFloat.random(in: 120...180),
+                width: CGFloat.random(in: 8...14),
+                height: CGFloat.random(in: 13...20),
+                rotation: Double.random(in: 0...360),
+                opacity: 1.0
+            )
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            withAnimation(.easeInOut(duration: 0.35)) {
-                showFinalSadu = true
+        withAnimation(.easeOut(duration: 0.5)) {
+            for i in confettiParticles.indices {
+                confettiParticles[i].x += CGFloat.random(in: -170...170)
+                confettiParticles[i].y -= CGFloat.random(in: 230...450)
+                confettiParticles[i].rotation += Double.random(in: -180...180)
             }
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.65)) {
-                    loomScale = 1.15
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation(.easeIn(duration: 2.2)) {
+                for i in confettiParticles.indices {
+                    confettiParticles[i].y += 650
+                    confettiParticles[i].x += CGFloat.random(in: -70...70)
+                    confettiParticles[i].rotation += Double.random(in: 360...720)
+                    confettiParticles[i].opacity = 0.0
                 }
-                
-                spawnConfetti()
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             }
         }
     }
     
-    // إنشاء المفرقعات
-    private func spawnConfetti() {
-        let colors: [Color] = [
-            Color(red: 0.72, green: 0.28, blue: 0.24),
-            Color(red: 0.32, green: 0.48, blue: 0.72),
-            Color(red: 0.88, green: 0.58, blue: 0.30),
-            Color(red: 0.42, green: 0.58, blue: 0.40),
-            .yellow,
-            .white
-        ]
+    // دالة مساعدة لتشغيل الصوت مع إيقاف الصوت السابق فوراً
+    private func playSound(named soundName: String) {
+        audioPlayer?.stop()
         
-        let screenWidth = UIScreen.main.bounds.width
-        let centerY = UIScreen.main.bounds.height * 0.42
-        
-        var newParticles: [ConfettiParticle] = []
-        for _ in 0..<50 {
-            let startX = screenWidth * 0.5 + CGFloat.random(in: -35...35)
-            let particle = ConfettiParticle(
-                color: colors.randomElement() ?? .orange,
-                x: startX,
-                y: centerY,
-                scale: CGFloat.random(in: 0.6...1.4),
-                rotation: Double.random(in: 0...360),
-                opacity: 1.0
-            )
-            newParticles.append(particle)
+        var soundUrl = Bundle.main.url(forResource: soundName, withExtension: "wav")
+        if soundUrl == nil {
+            soundUrl = Bundle.main.url(forResource: soundName, withExtension: "mp3")
         }
-        confettiParticles = newParticles
         
-        for i in confettiParticles.indices {
-            let angle = Double.random(in: 0...(2 * .pi))
-            let distance = CGFloat.random(in: 90...220)
-            let targetX = confettiParticles[i].x + cos(angle) * distance
-            let targetY = confettiParticles[i].y + sin(angle) * distance + 30
-            
-            withAnimation(.easeOut(duration: Double.random(in: 0.8...1.3))) {
-                confettiParticles[i].x = targetX
-                confettiParticles[i].y = targetY
-                confettiParticles[i].rotation += Double.random(in: 90...360)
-                confettiParticles[i].opacity = 0.0
-            }
+        guard let url = soundUrl else {
+            print("❌ ملف الصوت غير موجود في المشروع: \(soundName)")
+            return
+        }
+        
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.prepareToPlay()
+            audioPlayer?.play()
+        } catch {
+            print("❌ خطأ في تشغيل الصوت \(soundName): \(error.localizedDescription)")
         }
     }
 }
@@ -293,3 +330,4 @@ struct Lamya: View {
 #Preview {
     Lamya()
 }
+

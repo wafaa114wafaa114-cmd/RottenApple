@@ -11,7 +11,7 @@ import SwiftUI
 struct RottenAppleApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Lamya()
         }
     }
 }
