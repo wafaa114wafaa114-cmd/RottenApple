@@ -65,19 +65,22 @@ class SoundManager {
     }
 }
 
-// MARK: - جزيئات الترقيعات عند الفوز
+// MARK: - نموذج جزيئات الترقيعات المحدث ليتطابق مع كود الورد
 struct Confetti: Identifiable {
     let id = UUID()
     let color: Color
     var x: CGFloat = 0
     var y: CGFloat = 0
+    var width: CGFloat = 12
+    var height: CGFloat = 16
+    var rotation: Double = 0
     var opacity: Double = 1.0
 }
 
 // MARK: - واجهة اللعبة
 struct Wafaa: View {
     // حالات اللعبة
-    @State private var isPouring = false             // حالة صب القهوة
+    @State private var isPouring = false            // حالة صب القهوة
     @State private var cupX: CGFloat = -90           // موضع الفنجال الأفقي
     @State private var movingRight = true            // اتجاه حركة الفنجال
     @State private var isPausedAfterMiss = false     // إيقاف مؤقت عند الانسكاب خارج الفنجال
@@ -103,11 +106,11 @@ struct Wafaa: View {
             Image("background")
                 .resizable()
                 .ignoresSafeArea()
-            
+             
             // 2. ساحة اللعبة
             VStack {
                 Spacer()
-                
+                 
                 ZStack {
                     // النملة مع الدلة
                     Image("Ant")
@@ -132,9 +135,9 @@ struct Wafaa: View {
                         .offset(x: cupX, y: 215)
                 }
                 .frame(height: 540)
-                
+                 
                 Spacer()
-                
+                 
                 // رسالة الفوز فقط
                 VStack(spacing: 6) {
                     if gameState == .won {
@@ -147,13 +150,14 @@ struct Wafaa: View {
                 }
                 .padding(.bottom, 30)
             }
-            
-            // 3. فرقيعات الفوز تغطي كامل الشاشة
+             
+            // 3. فرقيعات الفوز الاحترافية المطابقة لكود الورد
             if gameState == .won {
                 ForEach(confettiList) { c in
-                    Circle()
+                    Rectangle()
                         .fill(c.color)
-                        .frame(width: 12, height: 12)
+                        .frame(width: c.width, height: c.height)
+                        .rotationEffect(.degrees(c.rotation))
                         .offset(x: c.x, y: c.y)
                         .opacity(c.opacity)
                 }
@@ -171,11 +175,11 @@ struct Wafaa: View {
         }
         .onReceive(timer) { _ in
             guard gameState == .playing, !isPouring, !isPausedAfterMiss else { return }
-            
+             
             if enableMovementSound {
                 SoundManager.shared.startMovementSound(named: "slide.mp3")
             }
-            
+             
             if movingRight {
                 cupX += 2.4
                 if cupX >= 120 { movingRight = false }
@@ -192,26 +196,26 @@ struct Wafaa: View {
     // MARK: - منطق الصب والتوقيت
     private func pourCoffee() {
         guard gameState == .playing, !isPouring, !isPausedAfterMiss else { return }
-        
+         
         isPouring = true
         SoundManager.shared.stopMovementSound()
-        
+         
         // اهتزاز لمس خفيف وصوت صب القهوة
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         SoundManager.shared.playSound(named: "pour.mp3")
-        
+         
         let currentCupX = cupX
         let isWinningShot = targetRange.contains(currentCupX)
-        
+         
         // تثبيت الفنجال فوراً عند إصابة الهدف
         if isWinningShot {
             gameState = .won
         }
-        
+         
         // مدة تدفق مجرى القهوة
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             isPouring = false
-            
+             
             if isWinningShot {
                 // الفوز: انتظار انتهاء صوت الصب بهدوء ثم تشغيل صوت وظهور الكونفيتي معاً
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -222,10 +226,10 @@ struct Wafaa: View {
             } else {
                 // الانسكاب خارج الفنجال: هابتك الخسارة القوي والمطلوب
                 isPausedAfterMiss = true
-                
+                 
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                
+                 
                 // وقفة زمنية قصيرة قبل العودة للحركة
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                     isPausedAfterMiss = false
@@ -234,24 +238,41 @@ struct Wafaa: View {
         }
     }
     
-    // MARK: - تشغيل الترقيعات بالتزامن المباشر
+    // MARK: - دالة تشغيل الكونفيتي المطابقة لمنطق كود الورد
     private func triggerConfetti() {
-        let colors: [Color] = [.orange, .yellow, .pink, .green, .purple, .cyan, .red, .blue]
+        let colors: [Color] = [.pink, .yellow, .purple, .orange, .teal, .white, .red, .cyan]
         
-        confettiList = (0..<60).map { _ in
+        // تجهيز القطع بقيم ابتدائية قريبة من الفنجال/المنتصف
+        confettiList = (0..<90).map { _ in
             Confetti(
-                color: colors.randomElement() ?? .yellow,
-                x: CGFloat.random(in: -140...140),
-                y: CGFloat.random(in: -220...(-80)),
+                color: colors.randomElement() ?? .pink,
+                x: CGFloat.random(in: -80...80),
+                y: CGFloat.random(in: 120...180),
+                width: CGFloat.random(in: 8...14),
+                height: CGFloat.random(in: 13...20),
+                rotation: Double.random(in: 0...360),
                 opacity: 1.0
             )
         }
         
-        withAnimation(.easeOut(duration: 1.3)) {
+        // مرحلة الإطلاق للأعلى والانتشار بتنطيط سلس (EaseOut)
+        withAnimation(.easeOut(duration: 0.5)) {
             for i in confettiList.indices {
-                confettiList[i].x += CGFloat.random(in: -80...80)
-                confettiList[i].y += CGFloat.random(in: 280...500)
-                confettiList[i].opacity = 0.0
+                confettiList[i].x += CGFloat.random(in: -170...170)
+                confettiList[i].y -= CGFloat.random(in: 230...450) // الارتفاع للأعلى
+                confettiList[i].rotation += Double.random(in: -180...180)
+            }
+        }
+        
+        // مرحلة السقوط للأسفل ببطء مع التلاشي والدوران المستمر
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation(.easeIn(duration: 2.2)) {
+                for i in confettiList.indices {
+                    confettiList[i].y += 650 // السقوط للأسفل
+                    confettiList[i].x += CGFloat.random(in: -70...70)
+                    confettiList[i].rotation += Double.random(in: 360...720)
+                    confettiList[i].opacity = 0.0
+                }
             }
         }
     }

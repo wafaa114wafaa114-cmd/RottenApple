@@ -65,12 +65,15 @@ class LadybugSoundManager {
     }
 }
 
-// MARK: - جزيئات كونفيتي الفوز
+// MARK: - جزيئات كونفيتي الفوز (مطابقة لكود وفاء)
 struct LadybugConfetti: Identifiable {
     let id = UUID()
     let color: Color
     var x: CGFloat = 0
     var y: CGFloat = 0
+    var width: CGFloat = 12
+    var height: CGFloat = 16
+    var rotation: Double = 0
     var opacity: Double = 1.0
 }
 
@@ -92,7 +95,7 @@ struct SmoothPath {
                 let t = CGFloat(s) / CGFloat(samplesPerSegment)
                 let t2 = t * t, t3 = t2 * t
                 func calc(_ a: CGFloat, _ b: CGFloat, _ c: CGFloat, _ d: CGFloat) -> CGFloat {
-                    0.5 * ((2*b) + (-a + c)*t + (2*a - 5*b + 4*c - d)*t2 + (-a + 3*b - 3*c + d)*t3)
+                    0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3)
                 }
                 out.append(CGPoint(x: calc(p0.x, p1.x, p2.x, p3.x),
                                    y: calc(p0.y, p1.y, p2.y, p3.y)))
@@ -230,9 +233,9 @@ struct LadybugGameView: View {
                                 guard !hasWon else { return }
 
                                 let center = CGPoint(x: geometry.size.width / 2,
-                                                     y: geometry.size.height / 2)
+                                                   y: geometry.size.height / 2)
                                 let finger = CGPoint(x: value.location.x - center.x,
-                                                     y: value.location.y - center.y)
+                                                   y: value.location.y - center.y)
 
                                 // عند بداية اللمس نحفظ الفرق بين الإصبع ومركز الدعسوقة لمنع القفزة
                                 if grabOffset == nil {
@@ -241,7 +244,7 @@ struct LadybugGameView: View {
                                 }
                                 let offsetValue = grabOffset ?? .zero
                                 let target = CGPoint(x: finger.x - offsetValue.x,
-                                                     y: finger.y - offsetValue.y)
+                                                   y: finger.y - offsetValue.y)
 
                                 progress = path.nearestProgress(to: target, around: progress, window: 0.06)
 
@@ -263,26 +266,17 @@ struct LadybugGameView: View {
                             }
                     )
 
-                // 5. احتفالية الفوز
+                // 5. احتفالية الفوز (الكونفيتي الجديد المطابق لكود وفاء)
                 if hasWon {
                     ForEach(confettiList) { c in
-                        Circle()
+                        Rectangle()
                             .fill(c.color)
-                            .frame(width: 12, height: 12)
+                            .frame(width: c.width, height: c.height)
+                            .rotationEffect(.degrees(c.rotation))
                             .offset(x: c.x, y: c.y)
                             .opacity(c.opacity)
                     }
                     .allowsHitTesting(false)
-
-                    VStack {
-                        Spacer()
-
-                        Text("WELCOME HOME! 🍎🎉")
-                            .font(.system(size: 24, weight: .black, design: .rounded))
-                            .foregroundColor(.red)
-                            .shadow(color: .black.opacity(0.35), radius: 10, x: 5, y: 10)
-                            .padding(.bottom, 140)
-                    }
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -319,21 +313,37 @@ struct LadybugGameView: View {
             isDanceScaled = true
         }
 
-        let colors: [Color] = [.red, .yellow, .orange, .green, .pink, .purple, .cyan]
-        confettiList = (0..<65).map { _ in
+        // إعدادات الكونفيتي المطابقة تماماً لكود وفاء (الانفجار من المنتصف والسقوط)
+        let colors: [Color] = [.pink, .yellow, .purple, .orange, .teal, .white, .red, .cyan]
+        
+        confettiList = (0..<90).map { _ in
             LadybugConfetti(
-                color: colors.randomElement() ?? .yellow,
-                x: CGFloat.random(in: -150...150),
-                y: CGFloat.random(in: -200...100),
+                color: colors.randomElement() ?? .pink,
+                x: CGFloat.random(in: -80...80),
+                y: CGFloat.random(in: 120...180),
+                width: CGFloat.random(in: 8...14),
+                height: CGFloat.random(in: 13...20),
+                rotation: Double.random(in: 0...360),
                 opacity: 1.0
             )
         }
-
-        withAnimation(.easeOut(duration: 1.4)) {
+        
+        withAnimation(.easeOut(duration: 0.5)) {
             for i in confettiList.indices {
-                confettiList[i].x += CGFloat.random(in: -80...80)
-                confettiList[i].y += CGFloat.random(in: 200...400)
-                confettiList[i].opacity = 0.0
+                confettiList[i].x += CGFloat.random(in: -170...170)
+                confettiList[i].y -= CGFloat.random(in: 230...450)
+                confettiList[i].rotation += Double.random(in: -180...180)
+            }
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation(.easeIn(duration: 2.2)) {
+                for i in confettiList.indices {
+                    confettiList[i].y += 650
+                    confettiList[i].x += CGFloat.random(in: -70...70)
+                    confettiList[i].rotation += Double.random(in: 360...720)
+                    confettiList[i].opacity = 0.0
+                }
             }
         }
     }
