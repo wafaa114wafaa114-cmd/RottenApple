@@ -2,15 +2,12 @@
 //  Home.swift
 //  RottenApple
 //
-//  The title screen and the level shelf, built from Reema's artwork
-//  (HomeAssets.xcassets). Reema: this is yours to change or replace —
-//  it's a starting point so the whole app can be played end to end.
+//  The level shelf (the home page), built from Reema's artwork
+//  (HomeAssets.xcassets). Reema: this is yours to change or replace.
+//  The splash screen is Reema's own code, in Reema.swift.
 //
-//    • TitleScreen       — the splash: logo + closed apple. After a moment the
-//                          apple opens into the apple house, then the level
-//                          shelf appears by itself.
-//    • LevelSelectScreen — the home page: the 3×3 apple buttons. Each one starts
-//                          a level; the empty apples (7–9) are levels to come.
+//    • LevelSelectScreen — the 3×3 apple buttons. Each one starts a level;
+//                          the empty apples (7–9) are levels to come.
 //
 //  Positions are in the artwork's own pixels (a 1320 × 2868 canvas, the
 //  size Reema drew on) and are scaled to fit any iPhone.
@@ -38,11 +35,6 @@ enum HomeArt {
 
     static let background = "home_background"
 
-    // Title screen
-    static let titleLogo   = Sprite("home_logo", 160, 330, 1000, 547)
-    static let closedApple = Sprite("home_closed_apple", 145, 1575, 1053, 1077)
-    static let openApple   = Sprite("home_open_apple", 121, 1520, 1100, 1161)
-
     // Level shelf
     static let shelfLogo  = Sprite("home_logo", 300, 260, 720, 394)
     static let shelfHouse = Sprite("home_open_apple", 255, 1880, 810, 855)
@@ -63,65 +55,6 @@ enum HomeArt {
             (Sprite("level_icon_9", 873, 841 + down, 300, 291), nil),
         ]
     }()
-}
-
-// MARK: - Title screen (splash)
-
-/// Shows the logo and the closed apple for a moment, opens the apple into
-/// the apple house, then moves on to the level shelf by itself.
-struct TitleScreen: View {
-    let onStart: () -> Void
-
-    /// How long the closed apple shows before it opens.
-    static let closedTime: Duration = .seconds(1.6)
-    /// How long the open apple house shows before the level shelf.
-    static let openTime: Duration = .seconds(1.4)
-
-    @State private var isOpen = false
-    @State private var wobble = 0
-
-    var body: some View {
-        GeometryReader { geo in
-            let space = CanvasSpace(focus: HomeArt.canvas, in: geo.size, padding: 0)
-            ZStack {
-                ArtImage(HomeArt.titleLogo, in: space)
-
-                if !isOpen {
-                    ArtImage(HomeArt.closedApple, in: space)
-                        .keyframeAnimator(initialValue: 0.0, trigger: wobble) { content, angle in
-                            content.rotationEffect(.degrees(angle), anchor: .bottom)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                CubicKeyframe(-6, duration: 0.08)
-                                CubicKeyframe(6, duration: 0.1)
-                                CubicKeyframe(-3, duration: 0.08)
-                                SpringKeyframe(0, duration: 0.2)
-                            }
-                        }
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
-                } else {
-                    ArtImage(HomeArt.openApple, in: space)
-                        .transition(.scale(scale: 0.7).combined(with: .opacity))
-                }
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-        }
-        .background(HomeBackground())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Rotten Apple")
-        .task { await playSplash() }
-    }
-
-    private func playSplash() async {
-        try? await Task.sleep(for: Self.closedTime)
-        wobble += 1
-        HapticManager.shared.impact(.medium)
-        try? await Task.sleep(for: .milliseconds(300))
-        HapticManager.shared.impact(.heavy)
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.65)) { isOpen = true }
-        try? await Task.sleep(for: Self.openTime)
-        onStart()
-    }
 }
 
 // MARK: - Level shelf
@@ -191,10 +124,6 @@ private struct HomeBackground: View {
             .scaledToFill()
             .ignoresSafeArea()
     }
-}
-
-#Preview("Title") {
-    TitleScreen(onStart: {})
 }
 
 #Preview("Levels") {

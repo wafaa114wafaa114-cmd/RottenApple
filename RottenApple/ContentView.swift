@@ -4,7 +4,7 @@
 //
 //  Moves between the title screen, the level shelf and each level.
 //
-//  The splash plays once, then the level shelf is the home page.
+//  Reema's splash (Reema.swift) plays once, then the level shelf is the home page.
 //  Every level has a home button (back to the shelf) in its top-left corner,
 //  and the same "well done" card when it's won, with redo and next. Next goes
 //  to the following level in `GameLevel.playOrder`; on the last level the card
@@ -33,7 +33,7 @@ struct ContentView: View {
         ZStack {
             switch screen {
             case .title:
-                TitleScreen(onStart: { screen = .levels })
+                Reema(onFinished: { screen = .levels })
                     .transition(.opacity)
 
             case .levels:
