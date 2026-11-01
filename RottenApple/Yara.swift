@@ -14,7 +14,7 @@
 //    • SOUNDS — the sound effects (files in the Sounds folder)
 //    • ART — image names and where each piece sits
 //    • LAYOUT HELPERS — fits the art to any screen size
-//    • SHARED UI — buttons, top bar
+//    • SHARED UI — buttons
 //    • CONFETTI — the burst at the end of each level
 //    • LEVEL COMPLETE CARD
 //
@@ -352,10 +352,8 @@ struct AppleCleanupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LevelHUD(
-                title: "Clean the Apple",
-                hint: "Drag the seeds and the worm off the apple"
-            )
+            // Room at the top for the app's home button (no title, like the other levels).
+            Color.clear.frame(height: 56)
 
             GeometryReader { geo in
                 let space = CanvasSpace(focus: Art.Apple.focus, in: geo.size, padding: 20)
@@ -692,10 +690,8 @@ struct SpiderShoeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LevelHUD(
-                title: "Shoes for Spider",
-                hint: "Put a shoe on every foot"
-            )
+            // Room at the top for the app's home button (no title, like the other levels).
+            Color.clear.frame(height: 56)
 
             GeometryReader { geo in
                 let space = CanvasSpace(focus: Art.Spider.focus, in: geo.size, padding: 12)
@@ -1248,7 +1244,7 @@ nonisolated extension CGPoint {
 }
 
 // ========================================================================
-// MARK: - SHARED UI — buttons, top bar
+// MARK: - SHARED UI — buttons
 // ========================================================================
 
 struct SquishyButtonStyle: ButtonStyle {
@@ -1278,29 +1274,6 @@ struct ArtButton: View {
         }
         .buttonStyle(SquishyButtonStyle())
         .accessibilityLabel(label)
-    }
-}
-
-/// Top bar shown inside each level.
-struct LevelHUD: View {
-    let title: String
-    let hint: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(.title3, design: .rounded).weight(.bold))
-                .foregroundStyle(Theme.ink)
-            Text(hint)
-                .font(.system(.footnote, design: .rounded))
-                .foregroundStyle(Theme.ink.opacity(0.6))
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Leaves room on the left for the app's home button.
-        .padding(.leading, 76)
-        .padding(.trailing, 20)
-        .padding(.top, 8)
     }
 }
 
