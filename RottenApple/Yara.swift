@@ -4,9 +4,8 @@
 //
 //  The whole game lives in this one file. Sections, top to bottom:
 //
-//    • APP SCREEN — the first view the app shows
-//    • GAME STATE — which level is showing, which levels are done
-//    • GAME CONTAINER — worm level first, then spider level
+//    • GAME STATE — which of my levels is showing, which are done
+//    • YARA — my two levels as one screen (worm level, then spider level)
 //    • LEVEL 1 — APPLE CLEANUP: rules (view model)
 //    • LEVEL 1 — APPLE CLEANUP: screen
 //    • LEVEL 2 — SPIDER SHOES: rules (view model)
@@ -30,38 +29,23 @@ import AVFoundation
 
 
 // ========================================================================
-// MARK: - APP SCREEN — the first view the app shows
-// ========================================================================
-
-struct ContentView: View {
-    var body: some View {
-        GameContainerView()
-            .preferredColorScheme(.light)
-            .statusBarHidden()
-            // Let drags near the screen edges reach the game first.
-            .defersSystemGestures(on: .all)
-            .persistentSystemOverlays(.hidden)
-    }
-}
-
-#Preview {
-    ContentView()
-}
-
-// ========================================================================
-// MARK: - GAME STATE — which level is showing, which levels are done
+// MARK: - GAME STATE — which of my levels is showing, which are done
 // ========================================================================
 
 @Observable
-final class GameViewModel {
+final class YaraGameState {
 
     enum Screen: Equatable {
         case appleCleanup   // Level 1 (worm)
         case spiderShoes    // Level 2 (spider)
     }
 
-    /// The game opens straight into the worm level.
-    var screen: Screen = .appleCleanup
+    /// Which level is showing. Starts on the worm level unless told otherwise.
+    var screen: Screen
+
+    init(startAt level: Screen = .appleCleanup) {
+        screen = level
+    }
 
     /// Level 1: every seed and the worm have been removed from the apple.
     var isLevel1Complete = false
@@ -93,11 +77,32 @@ final class GameViewModel {
 }
 
 // ========================================================================
-// MARK: - GAME CONTAINER — worm level first, then spider level
+// MARK: - YARA — my two levels as one screen (worm level, then spider level)
 // ========================================================================
 
-struct GameContainerView: View {
-    @State private var game = GameViewModel()
+/// Yara's part of the game. `Yara()` starts on the worm level; when it's done,
+/// "next" goes to the spider level. `Yara(startAt: .spiderShoes)` starts on the spider.
+struct Yara: View {
+    @State private var game: YaraGameState
+
+    /// When the app hosts a single level of mine, it passes this in: the level
+    /// then reports its win to the app (which shows the shared "well done"
+    /// card) instead of showing its own card.
+    private let onLevelComplete: (() -> Void)?
+
+    init(startAt level: YaraGameState.Screen = .appleCleanup,
+         onLevelComplete: (() -> Void)? = nil) {
+        _game = State(initialValue: YaraGameState(startAt: level))
+        self.onLevelComplete = onLevelComplete
+    }
+
+    private func levelWon() {
+        if let onLevelComplete {
+            onLevelComplete()
+        } else {
+            game.completeCurrentLevel()
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -109,12 +114,12 @@ struct GameContainerView: View {
 
             switch game.screen {
             case .appleCleanup:
-                AppleCleanupView(onComplete: { game.completeCurrentLevel() })
+                AppleCleanupView(onComplete: { levelWon() })
                     .id(game.runID)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
 
             case .spiderShoes:
-                SpiderShoeView(onComplete: { game.completeCurrentLevel() })
+                SpiderShoeView(onComplete: { levelWon() })
                     .id(game.runID)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
@@ -130,7 +135,7 @@ struct GameContainerView: View {
         .animation(.easeInOut(duration: 0.25), value: game.isShowingLevelComplete)
         .onAppear {
             HapticManager.shared.prepare()
-            SoundManager.shared.prepare()
+            YaraSoundManager.shared.prepare()
         }
     }
 
@@ -210,7 +215,7 @@ final class AppleCleanupViewModel {
 
     @ObservationIgnored var onComplete: (() -> Void)?
     @ObservationIgnored private let haptics = HapticManager.shared
-    @ObservationIgnored private let sounds = SoundManager.shared
+    @ObservationIgnored private let sounds = YaraSoundManager.shared
 
     // Tuning
     /// Screen points between the soft ticks felt while dragging.
@@ -553,7 +558,7 @@ final class SpiderShoeViewModel {
 
     @ObservationIgnored var onComplete: (() -> Void)?
     @ObservationIgnored private let haptics = HapticManager.shared
-    @ObservationIgnored private let sounds = SoundManager.shared
+    @ObservationIgnored private let sounds = YaraSoundManager.shared
     @ObservationIgnored private var pointsPerUnit: CGFloat = 0.3
 
     // Tuning
@@ -966,12 +971,12 @@ extension HapticManager {
 /// Plays the game's sound effects. The files live in the "Sounds" folder of
 /// the project; Xcode copies them into the app automatically.
 ///
-/// Sounds follow the phone's silent switch and mix with music that is
-/// already playing, which is what players expect from a small game.
+/// Uses the same sound settings as the rest of the team's levels: sounds play
+/// even when the phone's silent switch is on, and mix with any music playing.
 @MainActor
-final class SoundManager {
+final class YaraSoundManager {
 
-    static let shared = SoundManager()
+    static let shared = YaraSoundManager()
 
     /// Flip off to silence every sound (e.g. from a settings toggle).
     var isEnabled = true
@@ -992,7 +997,7 @@ final class SoundManager {
     private var activePlayers: [AVAudioPlayer] = []
 
     private init() {
-        try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
 
         for sound in Sound.allCases {
@@ -1130,6 +1135,8 @@ enum Art {
 
     // MARK: UI
 
+    static let homeButton = "button_home"
+    static let nextButton = "button_next"
     static let redoButton = "button_redo"
     static let levelBackground = "level_background"
 }
@@ -1290,7 +1297,9 @@ struct LevelHUD: View {
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
+        // Leaves room on the left for the app's home button.
+        .padding(.leading, 76)
+        .padding(.trailing, 20)
         .padding(.top, 8)
     }
 }
@@ -1409,6 +1418,8 @@ struct LevelCompleteOverlay: View {
     let title: String
     let message: String
     let showsNext: Bool
+    /// On the last level, the next button becomes a home button.
+    var nextGoesHome = false
     let onReplay: () -> Void
     let onNext: () -> Void
 
@@ -1433,16 +1444,11 @@ struct LevelCompleteOverlay: View {
                     ArtButton(asset: Art.redoButton, width: 72, label: "Play again", action: onReplay)
 
                     if showsNext {
-                        Button(action: onNext) {
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 30, weight: .black))
-                                .foregroundStyle(.white)
-                                .frame(width: 72, height: 72)
-                                .background(Circle().fill(Theme.appleRed))
-                                .overlay(Circle().strokeBorder(Theme.flesh, lineWidth: 5))
+                        if nextGoesHome {
+                            ArtButton(asset: Art.homeButton, width: 84, label: "Home", action: onNext)
+                        } else {
+                            ArtButton(asset: Art.nextButton, width: 84, label: "Next level", action: onNext)
                         }
-                        .buttonStyle(SquishyButtonStyle())
-                        .accessibilityLabel("Next level")
                     }
                 }
                 .padding(.top, 10)
@@ -1462,4 +1468,8 @@ struct LevelCompleteOverlay: View {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) { appeared = true }
         }
     }
+}
+
+#Preview {
+    Yara()
 }
