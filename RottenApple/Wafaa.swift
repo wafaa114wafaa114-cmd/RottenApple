@@ -99,6 +99,14 @@ struct Wafaa: View {
     enum GameState {
         case playing, won
     }
+
+    // ADDED for the full app: tells the app the level is won, so it can show
+    // the shared "well done" card (with redo + next).
+    var onComplete: () -> Void = {}
+
+    init(onComplete: @escaping () -> Void = {}) {
+        self.onComplete = onComplete
+    }
     
     var body: some View {
         ZStack {
@@ -138,17 +146,10 @@ struct Wafaa: View {
                  
                 Spacer()
                  
-                // رسالة الفوز فقط
-                VStack(spacing: 6) {
-                    if gameState == .won {
-                        Text("GOOD JOB! 🎉")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.green)
-                    } else {
-                        Spacer().frame(height: 50)
-                    }
-                }
-                .padding(.bottom, 30)
+                // CHANGED for the full app: the win message is now the shared
+                // "well done" card, so only the space is kept here.
+                Spacer().frame(height: 50)
+                    .padding(.bottom, 30)
             }
              
             // 3. فرقيعات الفوز الاحترافية المطابقة لكود الورد
@@ -222,6 +223,11 @@ struct Wafaa: View {
                     SoundManager.shared.playSound(named: "celebrate.mp3")
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     triggerConfetti()
+
+                    // ADDED for the full app: show the "well done" card once the confetti has fallen.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+                        onComplete()
+                    }
                 }
             } else {
                 // الانسكاب خارج الفنجال: هابتك الخسارة القوي والمطلوب

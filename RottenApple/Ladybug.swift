@@ -1,7 +1,6 @@
 import SwiftUI
 import Combine
 import AVFoundation
-import UIKit
 
 // MARK: - مدير صوت اللعبة
 class LadybugSoundManager {
@@ -163,7 +162,12 @@ struct LadybugGameView: View {
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     private let successHaptic = UINotificationFeedbackGenerator()
 
-    init() {
+    // ADDED for the full app: tells the app the level is won, so it can show
+    // the shared "well done" card (with redo + next).
+    private let onComplete: () -> Void
+
+    init(onComplete: @escaping () -> Void = {}) {
+        self.onComplete = onComplete
         // نقاط منتصف المسار
         path = SmoothPath(points: [
             CGPoint(x: 4,   y: 341),   // البداية أسفل الباث
@@ -298,7 +302,14 @@ struct LadybugGameView: View {
     }
 
     private func triggerWin() {
+        // ADDED for the full app: only win once (the drag keeps reporting progress).
+        guard !hasWon else { return }
         LadybugSoundManager.shared.stopStepLoop()
+
+        // ADDED for the full app: show the "well done" card once the confetti has fallen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            onComplete()
+        }
 
         withAnimation(.spring(response: 0.8, dampingFraction: 0.7)) {
             hasWon = true
